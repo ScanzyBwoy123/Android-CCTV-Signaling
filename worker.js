@@ -63,6 +63,7 @@ export class SignalingRoom {
       request.headers.get("Upgrade")?.toLowerCase() !==
       "websocket"
     ) {
+
       return new Response(
         "WebSocket endpoint",
         {
@@ -82,54 +83,9 @@ export class SignalingRoom {
       pair[1];
 
 
+    // Cloudflare Durable Object
+    // WebSocket Hibernation API
     this.state.acceptWebSocket(server);
-
-
-    server.addEventListener(
-      "message",
-      (event) => {
-
-        try {
-
-          const message =
-            JSON.parse(event.data);
-
-
-          if (
-            message.type === "offer" ||
-            message.type === "answer" ||
-            message.type === "candidate"
-          ) {
-
-            this.broadcast(
-              message,
-              server
-            );
-
-            return;
-          }
-
-
-          if (
-            message.type === "ping"
-          ) {
-
-            server.send(
-              JSON.stringify({
-                type: "pong"
-              })
-            );
-          }
-
-        } catch (error) {
-
-          console.error(
-            "Message error:",
-            error
-          );
-        }
-      }
-    );
 
 
     server.send(
@@ -149,10 +105,100 @@ export class SignalingRoom {
   }
 
 
-  broadcast(message, sender) {
+  webSocketMessage(ws, message) {
+
+    try {
+
+      const data =
+        typeof message === "string"
+          ? JSON.parse(message)
+          : JSON.parse(
+              new TextDecoder().decode(message)
+            );
+
+
+      console.log(
+        "Received:",
+        data.type
+      );
+
+
+      // Keep connection alive
+      if (
+        data.type === "ping"
+      ) {
+
+        ws.send(
+          JSON.stringify({
+            type: "pong"
+          })
+        );
+
+        return;
+      }
+
+
+      // WebRTC signaling
+      if (
+        data.type === "offer" ||
+        data.type === "answer" ||
+        data.type === "candidate"
+      ) {
+
+        this.broadcast(
+          data,
+          ws
+        );
+
+        return;
+      }
+
+    } catch (error) {
+
+      console.error(
+        "WebSocket message error:",
+        error
+      );
+    }
+  }
+
+
+  webSocketClose(
+    ws,
+    code,
+    reason,
+    wasClean
+  ) {
+
+    console.log(
+      "WebSocket closed:",
+      code,
+      reason,
+      wasClean
+    );
+  }
+
+
+  webSocketError(
+    ws,
+    error
+  ) {
+
+    console.error(
+      "WebSocket error:",
+      error
+    );
+  }
+
+
+  broadcast(
+    message,
+    sender
+  ) {
 
     const data =
       JSON.stringify(message);
+
 
     const sockets =
       this.state.getWebSockets();
@@ -179,22 +225,5 @@ export class SignalingRoom {
         }
       }
     }
-  }
-
-
-  webSocketClose(ws) {
-
-    console.log(
-      "WebSocket closed"
-    );
-  }
-
-
-  webSocketError(ws, error) {
-
-    console.error(
-      "WebSocket error:",
-      error
-    );
   }
 }
