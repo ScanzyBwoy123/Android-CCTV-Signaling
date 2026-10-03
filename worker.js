@@ -21,10 +21,9 @@ export default {
       );
     }
 
-
     // WebSocket connection
     if (
-      request.headers.get("Upgrade") ===
+      request.headers.get("Upgrade")?.toLowerCase() ===
       "websocket"
     ) {
 
@@ -32,20 +31,14 @@ export default {
         url.searchParams.get("room") ||
         "default";
 
-
       const id =
-        env.SIGNALING_ROOM.idFromName(
-          room
-        );
+        env.SIGNALING_ROOM.idFromName(room);
 
-
-      const stub =
+      const roomObject =
         env.SIGNALING_ROOM.get(id);
 
-
-      return stub.fetch(request);
+      return roomObject.fetch(request);
     }
-
 
     return new Response(
       "Android CCTV Signaling Server",
@@ -57,27 +50,19 @@ export default {
 };
 
 
-// ==========================================
-// SIGNALING ROOM
-// ==========================================
-
 export class SignalingRoom {
 
   constructor(state) {
-
     this.state = state;
-
-    this.sessions = new Set();
   }
 
 
   async fetch(request) {
 
     if (
-      request.headers.get("Upgrade") !==
+      request.headers.get("Upgrade")?.toLowerCase() !==
       "websocket"
     ) {
-
       return new Response(
         "WebSocket endpoint",
         {
@@ -87,29 +72,17 @@ export class SignalingRoom {
     }
 
 
-    const pair =
+    const webSocketPair =
       new WebSocketPair();
 
-
     const client =
-      pair[0];
+      webSocketPair[0];
 
     const server =
-      pair[1];
+      webSocketPair[1];
 
 
-    server.accept();
-
-
-    this.sessions.add(server);
-
-
-    // Tell the client it joined
-    server.send(
-      JSON.stringify({
-        type: "joined"
-      })
-    );
+    this.state.acceptWebSocket(server);
 
 
     server.addEventListener(
@@ -122,7 +95,6 @@ export class SignalingRoom {
             JSON.parse(event.data);
 
 
-          // Relay signaling messages
           if (
             message.type === "offer" ||
             message.type === "answer" ||
@@ -138,7 +110,6 @@ export class SignalingRoom {
           }
 
 
-          // Ping
           if (
             message.type === "ping"
           ) {
@@ -161,21 +132,10 @@ export class SignalingRoom {
     );
 
 
-    server.addEventListener(
-      "close",
-      () => {
-
-        this.sessions.delete(server);
-      }
-    );
-
-
-    server.addEventListener(
-      "error",
-      () => {
-
-        this.sessions.delete(server);
-      }
+    server.send(
+      JSON.stringify({
+        type: "joined"
+      })
     );
 
 
@@ -198,22 +158,27 @@ export class SignalingRoom {
       JSON.stringify(message);
 
 
+    const sockets =
+      this.state.getWebSockets();
+
+
     for (
-      const session of this.sessions
+      const socket of sockets
     ) {
 
       if (
-        session !== sender
+        socket !== sender
       ) {
 
         try {
 
-          session.send(data);
+          socket.send(data);
 
         } catch (error) {
 
-          this.sessions.delete(
-            session
+          console.error(
+            "Broadcast error:",
+            error
           );
         }
       }
