@@ -1,5 +1,4 @@
 export default {
-  // Android CCTV signaling Worker
   async fetch(request, env) {
 
     const url = new URL(request.url);
@@ -35,10 +34,10 @@ export default {
       const id =
         env.SIGNALING_ROOM.idFromName(room);
 
-      const roomObject =
+      const stub =
         env.SIGNALING_ROOM.get(id);
 
-      return roomObject.fetch(request);
+      return stub.fetch(request);
     }
 
     return new Response(
@@ -67,20 +66,20 @@ export class SignalingRoom {
       return new Response(
         "WebSocket endpoint",
         {
-          status: 200
+          status: 400
         }
       );
     }
 
 
-    const webSocketPair =
+    const pair =
       new WebSocketPair();
 
     const client =
-      webSocketPair[0];
+      pair[0];
 
     const server =
-      webSocketPair[1];
+      pair[1];
 
 
     this.state.acceptWebSocket(server);
@@ -150,14 +149,10 @@ export class SignalingRoom {
   }
 
 
-  broadcast(
-    message,
-    sender
-  ) {
+  broadcast(message, sender) {
 
     const data =
       JSON.stringify(message);
-
 
     const sockets =
       this.state.getWebSockets();
@@ -184,5 +179,22 @@ export class SignalingRoom {
         }
       }
     }
+  }
+
+
+  webSocketClose(ws) {
+
+    console.log(
+      "WebSocket closed"
+    );
+  }
+
+
+  webSocketError(ws, error) {
+
+    console.error(
+      "WebSocket error:",
+      error
+    );
   }
 }
