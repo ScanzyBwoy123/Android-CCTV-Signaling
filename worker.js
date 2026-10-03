@@ -1,4 +1,5 @@
 export default {
+  // Android CCTV signaling Worker
   async fetch(request, env) {
 
     const url = new URL(request.url);
