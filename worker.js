@@ -1,229 +1,258 @@
+import { DurableObject } from "cloudflare:workers";
+
+
 export default {
-  async fetch(request, env) {
 
-    const url = new URL(request.url);
+    async fetch(request, env) {
 
-    // Health check
-    if (
-      request.method === "GET" &&
-      url.pathname === "/"
-    ) {
-      return new Response(
-        JSON.stringify({
-          status: "online",
-          service: "Android CCTV Signaling Server"
-        }),
-        {
-          headers: {
-            "Content-Type": "application/json"
-          }
+        const url = new URL(request.url);
+
+
+        // Health check
+        if (
+            request.method === "GET" &&
+            url.pathname === "/"
+        ) {
+
+            return new Response(
+                JSON.stringify({
+                    status: "online",
+                    service: "Android CCTV Signaling Server"
+                }),
+                {
+                    headers: {
+                        "Content-Type": "application/json"
+                    }
+                }
+            );
         }
-      );
+
+
+        // WebSocket connection
+        if (
+            request.headers.get("Upgrade")?.toLowerCase() ===
+            "websocket"
+        ) {
+
+            const room =
+                url.searchParams.get("room") ||
+                "default";
+
+
+            const id =
+                env.SIGNALING_ROOM.idFromName(room);
+
+
+            const stub =
+                env.SIGNALING_ROOM.get(id);
+
+
+            return stub.fetch(request);
+        }
+
+
+        return new Response(
+            "Android CCTV Signaling Server",
+            {
+                status: 200
+            }
+        );
     }
-
-    // WebSocket connection
-    if (
-      request.headers.get("Upgrade")?.toLowerCase() ===
-      "websocket"
-    ) {
-
-      const room =
-        url.searchParams.get("room") ||
-        "default";
-
-      const id =
-        env.SIGNALING_ROOM.idFromName(room);
-
-      const stub =
-        env.SIGNALING_ROOM.get(id);
-
-      return stub.fetch(request);
-    }
-
-    return new Response(
-      "Android CCTV Signaling Server",
-      {
-        status: 200
-      }
-    );
-  }
 };
 
 
-export class SignalingRoom {
 
-  constructor(state) {
-    this.state = state;
-  }
+export class SignalingRoom extends DurableObject {
 
 
-  async fetch(request) {
+    constructor(ctx, env) {
 
-    if (
-      request.headers.get("Upgrade")?.toLowerCase() !==
-      "websocket"
-    ) {
+        super(ctx, env);
 
-      return new Response(
-        "WebSocket endpoint",
-        {
-          status: 400
-        }
-      );
+        this.ctx = ctx;
+        this.env = env;
     }
 
 
-    const pair =
-      new WebSocketPair();
 
-    const client =
-      pair[0];
+    async fetch(request) {
 
-    const server =
-      pair[1];
+        if (
+            request.headers.get("Upgrade")?.toLowerCase() !==
+            "websocket"
+        ) {
 
-
-    // Cloudflare Durable Object
-    // WebSocket Hibernation API
-    this.state.acceptWebSocket(server);
-
-
-    server.send(
-      JSON.stringify({
-        type: "joined"
-      })
-    );
-
-
-    return new Response(
-      null,
-      {
-        status: 101,
-        webSocket: client
-      }
-    );
-  }
-
-
-  webSocketMessage(ws, message) {
-
-    try {
-
-      const data =
-        typeof message === "string"
-          ? JSON.parse(message)
-          : JSON.parse(
-              new TextDecoder().decode(message)
+            return new Response(
+                "WebSocket endpoint",
+                {
+                    status: 400
+                }
             );
+        }
 
 
-      console.log(
-        "Received:",
-        data.type
-      );
+        const webSocketPair =
+            new WebSocketPair();
 
 
-      // Keep connection alive
-      if (
-        data.type === "ping"
-      ) {
+        const [client, server] =
+            Object.values(webSocketPair);
 
-        ws.send(
-          JSON.stringify({
-            type: "pong"
-          })
+
+        // Accept using Cloudflare's
+        // Durable Object WebSocket API
+        this.ctx.acceptWebSocket(server);
+
+
+        // Identify this connection
+        server.serializeAttachment({
+            joinedAt: Date.now()
+        });
+
+
+        // Tell the client it connected
+        server.send(
+            JSON.stringify({
+                type: "joined"
+            })
         );
 
-        return;
-      }
 
-
-      // WebRTC signaling
-      if (
-        data.type === "offer" ||
-        data.type === "answer" ||
-        data.type === "candidate"
-      ) {
-
-        this.broadcast(
-          data,
-          ws
+        return new Response(
+            null,
+            {
+                status: 101,
+                webSocket: client
+            }
         );
-
-        return;
-      }
-
-    } catch (error) {
-
-      console.error(
-        "WebSocket message error:",
-        error
-      );
     }
-  }
 
 
-  webSocketClose(
-    ws,
-    code,
-    reason,
-    wasClean
-  ) {
 
-    console.log(
-      "WebSocket closed:",
-      code,
-      reason,
-      wasClean
-    );
-  }
-
-
-  webSocketError(
-    ws,
-    error
-  ) {
-
-    console.error(
-      "WebSocket error:",
-      error
-    );
-  }
-
-
-  broadcast(
-    message,
-    sender
-  ) {
-
-    const data =
-      JSON.stringify(message);
-
-
-    const sockets =
-      this.state.getWebSockets();
-
-
-    for (
-      const socket of sockets
+    async webSocketMessage(
+        ws,
+        message
     ) {
-
-      if (
-        socket !== sender
-      ) {
 
         try {
 
-          socket.send(data);
+            const data =
+                typeof message === "string"
+                    ? JSON.parse(message)
+                    : JSON.parse(
+                        new TextDecoder().decode(message)
+                    );
+
+
+            console.log(
+                "WebSocket message:",
+                data.type
+            );
+
+
+            // Ping
+            if (
+                data.type === "ping"
+            ) {
+
+                ws.send(
+                    JSON.stringify({
+                        type: "pong"
+                    })
+                );
+
+                return;
+            }
+
+
+            // WebRTC signaling
+            if (
+                data.type === "offer" ||
+                data.type === "answer" ||
+                data.type === "candidate"
+            ) {
+
+                this.broadcast(
+                    data,
+                    ws
+                );
+            }
 
         } catch (error) {
 
-          console.error(
-            "Broadcast error:",
-            error
-          );
+            console.error(
+                "WebSocket message error:",
+                error
+            );
         }
-      }
     }
-  }
+
+
+
+    async webSocketClose(
+        ws,
+        code,
+        reason,
+        wasClean
+    ) {
+
+        console.log(
+            "WebSocket closed:",
+            code,
+            reason,
+            wasClean
+        );
+    }
+
+
+
+    async webSocketError(
+        ws,
+        error
+    ) {
+
+        console.error(
+            "WebSocket error:",
+            error
+        );
+    }
+
+
+
+    broadcast(
+        message,
+        sender
+    ) {
+
+        const data =
+            JSON.stringify(message);
+
+
+        const sockets =
+            this.ctx.getWebSockets();
+
+
+        for (
+            const socket of sockets
+        ) {
+
+            if (
+                socket !== sender &&
+                socket.readyState === WebSocket.OPEN
+            ) {
+
+                try {
+
+                    socket.send(data);
+
+                } catch (error) {
+
+                    console.error(
+                        "Broadcast error:",
+                        error
+                    );
+                }
+            }
+        }
+    }
 }
