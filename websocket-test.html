@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket Test</title>
+</head>
+
+<body>
+
+<h2>Android CCTV WebSocket Test</h2>
+
+<p id="status">Testing...</p>
+
+<script>
+
+const status =
+    document.getElementById("status");
+
+const socket =
+    new WebSocket(
+        "wss://android-cctv-signaling.scanzybwoy8.workers.dev/?room=test"
+    );
+
+socket.onopen = function () {
+
+    status.textContent =
+        "SUCCESS: WebSocket connected";
+
+    console.log(
+        "WebSocket connected"
+    );
+
+    socket.send(
+        JSON.stringify({
+            type: "ping"
+        })
+    );
+};
+
+
+socket.onmessage = function (event) {
+
+    console.log(
+        "Server message:",
+        event.data
+    );
+
+    status.textContent =
+        "SUCCESS: " + event.data;
+};
+
+
+socket.onerror = function (error) {
+
+    console.error(
+        "WebSocket error:",
+        error
+    );
+
+    status.textContent =
+        "ERROR: WebSocket connection failed";
+};
+
+
+socket.onclose = function (event) {
+
+    console.log(
+        "WebSocket closed:",
+        event
+    );
+
+    if (
+        status.textContent === "Testing..."
+    ) {
+
+        status.textContent =
+            "CLOSED: WebSocket disconnected";
+    }
+};
+
+</script>
+
+</body>
+</html>
